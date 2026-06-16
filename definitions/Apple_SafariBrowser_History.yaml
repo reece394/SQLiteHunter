@@ -1,0 +1,56 @@
+Name: Safari Browser History
+Author: araesa
+Description: |
+  Parses Safari browsing history from the History.db database.
+  Joins history_items and history_visits tables to produce a
+  per-visit browsing timeline. The Origin field indicates whether
+  the visit was local or synced from another device via iCloud.
+
+  NOTE: Safari's data directory (~/Library/Safari/) is protected
+  by macOS TCC. The Velociraptor agent must have Full Disk Access.
+
+SQLiteIdentifyQuery: |
+  SELECT count(*) AS `Check`
+  FROM sqlite_master
+  WHERE type='table'
+    AND (name='history_items' OR name='history_visits');
+SQLiteIdentifyValue: 2
+Categories:
+  - MacOS
+  - Browser
+FilenameRegex: "History.db"
+Globs:
+  - "/Users/*/Library/Safari/History.db"
+
+Sources:
+- name: Visits
+  VQL: |
+    SELECT ID,
+       timestamp(epoch=visit_time + 978307200) AS VisitTime,
+       URL, Title, VisitCount, DomainExpansion,
+       if(condition=Origin = 0,
+          then="Local",
+          else="iCloud Sync") AS Origin,
+       Bool(Value=LoadSuccessful) AS LoadSuccessful,
+       Bool(Value=HttpNonGet) AS HttpNonGet,
+       RedirectSource, RedirectDestination, OSPath
+    FROM Rows
+    WHERE VisitTime > DateAfter AND VisitTime < DateBefore
+      AND (URL, Title) =~ FilterRegex
+
+  SQL: |
+    SELECT
+      hi.id AS ID,
+      hv.visit_time,
+      hi.url AS URL,
+      hv.title AS Title,
+      hi.visit_count AS VisitCount,
+      hi.domain_expansion AS DomainExpansion,
+      hv.origin AS Origin,
+      hv.load_successful AS LoadSuccessful,
+      hv.http_non_get AS HttpNonGet,
+      hv.redirect_source AS RedirectSource,
+      hv.redirect_destination AS RedirectDestination
+    FROM history_items hi
+    JOIN history_visits hv ON hi.id = hv.history_item
+    ORDER BY hv.visit_time ASC
